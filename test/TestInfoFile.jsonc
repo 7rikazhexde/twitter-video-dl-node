@@ -1,0 +1,67 @@
+// TestInfoFile for twitter-video-dl-node
+{
+    "tests": [
+      // No file name specified & 1 video / 1 post
+      {
+        "url": "https://x.com/tw_7rikazhexde/status/1710868951109124552?s=20",
+        "file_name": "",
+        "output_directory": "../output",
+        "expected_files": [
+          "output.mp4"
+        ]
+      },
+      // File name specified & 1 video / 1 post
+      {
+        "url": "https://x.com/tw_7rikazhexde/status/1710868951109124552?s=20",
+        "file_name": "test.mp4",
+        "output_directory": "../output",
+        "expected_files": [
+          "test.mp4"
+        ]
+      },
+      // No file name specified & 4 videos / 1 post
+      {
+        "url": "https://x.com/tw_7rikazhexde/status/1710678217575801015?s=20",
+        "file_name": "",
+        "output_directory": "../output",
+        "expected_files": [
+          "output-1.mp4",
+          "output-2.mp4",
+          "output-3.mp4",
+          "output-4.mp4"
+        ]
+      },
+      // File name specified & 4 videos / 1 post
+      {
+        "url": "https://x.com/tw_7rikazhexde/status/1710678217575801015?s=20",
+        "file_name": "test.mp4",
+        "output_directory": "../output",
+        "expected_files": [
+          "test-1.mp4",
+          "test-2.mp4",
+          "test-3.mp4",
+          "test-4.mp4"
+        ]
+      },
+      // No file name specified & 1 video(gif saved in mp4 format / 1 post
+      {
+        "url": "https://x.com/tw_7rikazhexde/status/1710868951109124552?s=20",
+        "file_name": "",
+        "output_directory": "../output",
+        "expected_files": [
+          "output.mp4"
+        ]
+      },
+      // File name specified & 1 video(gif saved in mp4 format) / 1 post
+      {
+        "url": "https://x.com/tw_7rikazhexde/status/1710868951109124552?s=20",
+        "file_name": "git-test.mp4",
+        "output_directory": "../output",
+        "expected_files": [
+          "git-test.mp4"
+        ]
+      }
+      // Please add other test data below.
+    ]
+  }
+  

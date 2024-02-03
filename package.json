@@ -1,0 +1,22 @@
+{
+  "name": "twitter-video-dl-node",
+  "version": "0.0.1",
+  "description": "This project is based on the original code of the [7rikazhexde / twitter-video-dl-for-sc](https://github.com/7rikazhexde/twitter-video-dl-for-sc) project, which allows users to download X(Twitter) App videos as MP4 files using Node.js, URLs without the need for API keys.",
+  "main": "twitter-video-dl-node.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "author": "7rikaz_h785 <7rikaz.h785.stat2ltas41lcijad@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.7",
+    "fs": "^0.0.1-security",
+    "jsonc-parser": "^3.2.1",
+    "path": "^0.12.7",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "fluent-ffmpeg": "^2.1.2",
+    "jest": "^29.7.0"
+  }
+}
