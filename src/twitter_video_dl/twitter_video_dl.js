@@ -37,33 +37,86 @@ const data = JSON.parse(
 
 async function get_tokens(tweet_url) {
   const headers = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
-    Accept: "*/*",
-    "Accept-Language": "de,en-US;q=0.7,en;q=0.3",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.5",
     "Accept-Encoding": "gzip, deflate, br",
-    TE: "trailers",
+    "TE": "trailers",
   };
 
-  const html = await axios.get(tweet_url, { headers });
+  const session = axios.create({ headers });
+  let response = await session.get(tweet_url);
 
-  if (html.status !== 200) {
+  if (response.status !== 200) {
     throw new Error(
-      `Failed to get tweet page. If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Status code: ${html.status}. Tweet url: ${tweet_url}`
+      `Failed to get tweet page. Status code: ${response.status}. Tweet url: ${tweet_url}`
     );
   }
 
-  const mainjs_url = html.data.match(
-    /https:\/\/abs\.twimg\.com\/responsive-web\/client-web-legacy\/main\.[^.]+\.js/
+  const redirect_url_match = response.data.match(
+    /content="0; url = (https:\/\/twitter\.com\/[^"]+)"/
   );
 
-  if (!mainjs_url) {
+  if (!redirect_url_match) {
+    throw new Error(
+      `Failed to find redirect URL. Tweet url: ${tweet_url}`
+    );
+  }
+
+  const redirect_url = redirect_url_match[1];
+
+  const tok_match = redirect_url.match(/tok=([^&"]+)/);
+
+  if (!tok_match) {
+    throw new Error(
+      `Failed to find 'tok' parameter in redirect URL. Redirect URL: ${redirect_url}`
+    );
+  }
+
+  const tok = tok_match[1];
+
+  response = await session.get(redirect_url);
+
+  if (response.status !== 200) {
+    throw new Error(
+      `Failed to get redirect page. Status code: ${response.status}. Redirect URL: ${redirect_url}`
+    );
+  }
+
+  const data_match = response.data.match(
+    /<input type="hidden" name="data" value="([^"]+)"/
+  );
+
+  if (!data_match) {
+    throw new Error(
+      `Failed to find 'data' parameter in redirect page. Redirect URL: ${redirect_url}`
+    );
+  }
+
+  const data = data_match[1];
+
+  const auth_url = "https://x.com/x/migrate";
+  const auth_params = { tok, data };
+
+  response = await session.post(auth_url, auth_params);
+
+  if (response.status !== 200) {
+    throw new Error(
+      `Failed to authenticate. Status code: ${response.status}. Auth URL: ${auth_url}`
+    );
+  }
+
+  const mainjs_url = response.data.match(
+    /https:\/\/abs\.twimg\.com\/responsive-web\/client-web-legacy\/main\.[^\.]+\.js/g
+  );
+
+  if (!mainjs_url || mainjs_url.length === 0) {
     throw new Error(
       `Failed to find main.js file. If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Tweet url: ${tweet_url}`
     );
   }
 
-  const mainjs = await axios.get(mainjs_url[0]);
+  const mainjs = await session.get(mainjs_url[0]);
 
   if (mainjs.status !== 200) {
     throw new Error(
@@ -71,31 +124,24 @@ async function get_tokens(tweet_url) {
     );
   }
 
-  const bearer_token = mainjs.data.match(/AAAAAAAAA[^"]+/);
+  const bearer_token = mainjs.data.match(/AAAAAAAAA[^"]+/g);
 
-  if (!bearer_token) {
+  if (!bearer_token || bearer_token.length === 0) {
     throw new Error(
       `Failed to find bearer token. If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Tweet url: ${tweet_url}, main.js url: ${mainjs_url[0]}`
     );
   }
 
-  // get the guest token
-  const s = axios.create({
-    headers: {
-      "user-agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
-      accept: "*/*",
-      "accept-language": "de,en-US;q=0.7,en;q=0.3",
-      "accept-encoding": "gzip, deflate, br",
-      te: "trailers",
-      authorization: `Bearer ${bearer_token[0]}`,
-    },
-  });
+  session.defaults.headers.common["authorization"] = `Bearer ${bearer_token[0]}`;
+  const guest_token_response = await session.post("https://api.twitter.com/1.1/guest/activate.json");
 
-  // activate bearer token and get guest token
-  const guest_token = (
-    await s.post("https://api.twitter.com/1.1/guest/activate.json")
-  ).data.guest_token;
+  if (guest_token_response.status !== 200) {
+    throw new Error(
+      `Failed to activate guest token. Status code: ${guest_token_response.status}. Tweet url: ${tweet_url}`
+    );
+  }
+
+  const guest_token = guest_token_response.data.guest_token;
 
   if (!guest_token) {
     throw new Error(

@@ -5,7 +5,7 @@
       {
         "url": "https://x.com/tw_7rikazhexde/status/1710868951109124552?s=20",
         "file_name": "",
-        "output_directory": "../output",
+        "output_directory": "./output",
         "expected_files": [
           "output.mp4"
         ]
@@ -14,7 +14,7 @@
       {
         "url": "https://x.com/tw_7rikazhexde/status/1710868951109124552?s=20",
         "file_name": "test.mp4",
-        "output_directory": "../output",
+        "output_directory": "./output",
         "expected_files": [
           "test.mp4"
         ]
@@ -23,7 +23,7 @@
       {
         "url": "https://x.com/tw_7rikazhexde/status/1710678217575801015?s=20",
         "file_name": "",
-        "output_directory": "../output",
+        "output_directory": "./output",
         "expected_files": [
           "output-1.mp4",
           "output-2.mp4",
@@ -35,7 +35,7 @@
       {
         "url": "https://x.com/tw_7rikazhexde/status/1710678217575801015?s=20",
         "file_name": "test.mp4",
-        "output_directory": "../output",
+        "output_directory": "./output",
         "expected_files": [
           "test-1.mp4",
           "test-2.mp4",
@@ -47,7 +47,7 @@
       {
         "url": "https://x.com/tw_7rikazhexde/status/1710868951109124552?s=20",
         "file_name": "",
-        "output_directory": "../output",
+        "output_directory": "./output",
         "expected_files": [
           "output.mp4"
         ]
@@ -56,7 +56,7 @@
       {
         "url": "https://x.com/tw_7rikazhexde/status/1710868951109124552?s=20",
         "file_name": "git-test.mp4",
-        "output_directory": "../output",
+        "output_directory": "./output",
         "expected_files": [
           "git-test.mp4"
         ]

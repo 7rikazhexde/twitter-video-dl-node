@@ -37,7 +37,7 @@ From time to time, every week or so, Twitter will add some new request parameter
 
 ## Test-Environment
 
-If you get an error with the specified URL, please register an issue. If you want to test individually, you can test in advance by adding the URL of the post where the video was posted to `tests/testfile.jsonc`.
+If you get an error with the specified URL, please register an issue. If you want to test individually, you can test in advance by adding the URL of the post where the video was posted to `tests/TestInfoFile.jsonc`.
 
 > [!NOTE]
 > **- The test environment depends on **jest**, which is added as part of the dev environment dependency(devDependencies) files with the `npm install` command.**  
