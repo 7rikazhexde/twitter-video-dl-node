@@ -6,7 +6,7 @@
   "scripts": {
     "test": "jest"
   },
-  "author": "7rikaz_h785 <7rikaz.h785.stat2ltas41lcijad@gmail.com>",
+  "author": "7rikazhexde",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.6.7",
