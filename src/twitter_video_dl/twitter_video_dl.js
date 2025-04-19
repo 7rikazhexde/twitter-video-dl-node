@@ -15,13 +15,13 @@ const debugMode = false;
 
 // Define a console.log function that outputs the function name and line number
 function debugLog(...args) {
-    if (debugMode) {
-        const stack = new Error().stack;
-        const callerLine = stack.split('\n')[2].trim(); // 呼び出し元の行を取得
-        const callerFunctionName = callerLine.match(/at (.+) \(/)[1]; // 関数名を取得
-        console.log(`[${callerFunctionName}] Line ${callerLine}`);
-        console.log(...args);
-    }
+  if (debugMode) {
+    const stack = new Error().stack;
+    const callerLine = stack.split("\n")[2].trim(); // Get the caller line
+    const callerFunctionName = callerLine.match(/at (.+) \(/)[1]; // Get the function name
+    console.log(`[${callerFunctionName}] Line ${callerLine}`);
+    console.log(...args);
+  }
 }
 
 // Open setting file
@@ -37,11 +37,12 @@ const data = JSON.parse(
 
 async function get_tokens(tweet_url) {
   const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
-    "Accept": "*/*",
-    "Accept-Language": "en-US,en;q=0.5",
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
+    Accept: "*/*",
+    "Accept-Language": "en-US, en;q=0.5",
     "Accept-Encoding": "gzip, deflate, br",
-    "TE": "trailers",
+    TE: "trailers",
   };
 
   const session = axios.create({ headers });
@@ -53,29 +54,35 @@ async function get_tokens(tweet_url) {
     );
   }
 
-  const redirect_url_match = response.data.match(
+  // Multiple redirect detection methods
+  let redirect_url_match = response.data.match(
     /content="0; url = (https:\/\/twitter\.com\/[^"]+)"/
   );
 
+  // Fallback to JavaScript redirect if meta refresh not found
   if (!redirect_url_match) {
-    throw new Error(
-      `Failed to find redirect URL. Tweet url: ${tweet_url}`
+    const js_redirect_match = response.data.match(
+      /window\.location\.replace\("([^"]+)"\)/
     );
+    if (js_redirect_match) {
+      redirect_url_match = js_redirect_match;
+    }
   }
 
-  const redirect_url = redirect_url_match[1];
+  // Use original URL if no redirect found
+  const redirect_url = redirect_url_match ? redirect_url_match[1] : tweet_url;
 
+  // Attempt to find tok parameter (optional)
   const tok_match = redirect_url.match(/tok=([^&"]+)/);
+  const tok = tok_match ? tok_match[1] : null;
 
-  if (!tok_match) {
-    throw new Error(
-      `Failed to find 'tok' parameter in redirect URL. Redirect URL: ${redirect_url}`
-    );
-  }
-
-  const tok = tok_match[1];
-
-  response = await session.get(redirect_url);
+  response = await session.get(redirect_url, {
+    headers,
+    maxRedirects: 0,
+    validateStatus: function (status) {
+      return status >= 200 && status < 303; // don't throw on redirects
+    },
+  });
 
   if (response.status !== 200) {
     throw new Error(
@@ -83,57 +90,82 @@ async function get_tokens(tweet_url) {
     );
   }
 
+  // Find data parameter (optional)
   const data_match = response.data.match(
     /<input type="hidden" name="data" value="([^"]+)"/
   );
+  const data = data_match ? data_match[1] : null;
 
-  if (!data_match) {
-    throw new Error(
-      `Failed to find 'data' parameter in redirect page. Redirect URL: ${redirect_url}`
-    );
-  }
-
-  const data = data_match[1];
-
+  // Prepare authentication request
   const auth_url = "https://x.com/x/migrate";
-  const auth_params = { tok, data };
+  const auth_params = {};
 
-  response = await session.post(auth_url, auth_params);
-
-  if (response.status !== 200) {
-    throw new Error(
-      `Failed to authenticate. Status code: ${response.status}. Auth URL: ${auth_url}`
-    );
+  if (tok) {
+    auth_params.tok = tok;
   }
 
-  const mainjs_url = response.data.match(
+  if (data) {
+    auth_params.data = data;
+  }
+
+  // Only send auth request if we have parameters
+  if (Object.keys(auth_params).length > 0) {
+    response = await session.post(auth_url, auth_params, { headers });
+
+    if (response.status !== 200) {
+      throw new Error(
+        `Failed to authenticate. Status code: ${response.status}. Auth URL: ${auth_url}`
+      );
+    }
+  } else {
+    response = await session.get(redirect_url, { headers });
+  }
+
+  // Find main.js URL
+  const mainjs_urls = response.data.match(
     /https:\/\/abs\.twimg\.com\/responsive-web\/client-web-legacy\/main\.[^\.]+\.js/g
   );
 
-  if (!mainjs_url || mainjs_url.length === 0) {
-    throw new Error(
-      `Failed to find main.js file. If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Tweet url: ${tweet_url}`
-    );
+  if (!mainjs_urls || mainjs_urls.length === 0) {
+    throw new Error(`Failed to find main.js file. Tweet url: ${tweet_url}`);
   }
 
-  const mainjs = await session.get(mainjs_url[0]);
+  const mainjs_url = mainjs_urls[0];
+  const mainjs = await session.get(mainjs_url);
 
   if (mainjs.status !== 200) {
     throw new Error(
-      `Failed to get main.js file. If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Status code: ${mainjs.status}. Tweet url: ${tweet_url}`
+      `Failed to get main.js file. Status code: ${mainjs.status}. Tweet url: ${tweet_url}`
     );
   }
 
-  const bearer_token = mainjs.data.match(/AAAAAAAAA[^"]+/g);
+  // Multiple methods to find bearer token
+  let bearer_token = mainjs.data.match(/AAAAAAAAA[^"]+/g);
+
+  // Fallback method if first method fails
+  if (!bearer_token || bearer_token.length === 0) {
+    bearer_token = mainjs.data.match(/Bearer\s+([^\s"]+)/g);
+  }
 
   if (!bearer_token || bearer_token.length === 0) {
     throw new Error(
-      `Failed to find bearer token. If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Tweet url: ${tweet_url}, main.js url: ${mainjs_url[0]}`
+      `Failed to find bearer token. Tweet url: ${tweet_url}, main.js url: ${mainjs_url}`
     );
   }
 
-  session.defaults.headers.common["authorization"] = `Bearer ${bearer_token[0]}`;
-  const guest_token_response = await session.post("https://api.twitter.com/1.1/guest/activate.json");
+  let bearerTokenValue = bearer_token[0];
+
+  // Remove "Bearer " prefix if present
+  if (bearerTokenValue.startsWith("Bearer ")) {
+    bearerTokenValue = bearerTokenValue.replace("Bearer ", "");
+  }
+
+  session.defaults.headers.common[
+    "authorization"
+  ] = `Bearer ${bearerTokenValue}`;
+  const guest_token_response = await session.post(
+    "https://api.twitter.com/1.1/guest/activate.json"
+  );
 
   if (guest_token_response.status !== 200) {
     throw new Error(
@@ -145,11 +177,11 @@ async function get_tokens(tweet_url) {
 
   if (!guest_token) {
     throw new Error(
-      `Failed to find guest token. If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Tweet url: ${tweet_url}, main.js url: ${mainjs_url[0]}`
+      `Failed to find guest token. Tweet url: ${tweet_url}, main.js url: ${mainjs_url}`
     );
   }
 
-  return [bearer_token[0], guest_token];
+  return [bearerTokenValue, guest_token];
 }
 
 function get_details_url(tweet_id, features, variables) {
@@ -294,13 +326,19 @@ async function download_video(
   output_folder_path = "./output"
 ) {
   try {
-    const [bearer_token, guest_token] = await get_tokens(tweet_url);
+    const x_conv_tweet_url = tweet_url.replace(
+      "https://twitter.com/",
+      "https://x.com/"
+    );
+    debugLog(`bearer_token: ${tweet_url}`);
+    debugLog(`guest_token: ${x_conv_tweet_url}`);
+    const [bearer_token, guest_token] = await get_tokens(x_conv_tweet_url);
     debugLog(`bearer_token: ${bearer_token}`);
     debugLog(`guest_token: ${guest_token}`);
 
     const resp = await get_tweet_details(tweet_url, guest_token, bearer_token);
     debugLog(`resp.data: ${JSON.stringify(resp.data, null, 2)}`);
-    
+
     const videoUrls = createVideoUrls(resp.data);
     debugLog("videourls:", videoUrls);
 

@@ -25,3 +25,6 @@ npm-debug.log*
 *.njsproj
 *.sln
 *.sw*
+
+# project depend
+/output
