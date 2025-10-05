@@ -123,9 +123,9 @@ async function get_tokens(tweet_url) {
 
   // Find main.js URL
   const mainjs_urls = response.data.match(
-    /https:\/\/abs\.twimg\.com\/responsive-web\/client-web-legacy\/main\.[^\.]+\.js/g
+    /https:\/\/abs\.twimg\.com\/responsive-web\/client-web(?:-legacy)?\/main\.[^\.]+\.js/g
   );
-
+  
   if (!mainjs_urls || mainjs_urls.length === 0) {
     throw new Error(`Failed to find main.js file. Tweet url: ${tweet_url}`);
   }
