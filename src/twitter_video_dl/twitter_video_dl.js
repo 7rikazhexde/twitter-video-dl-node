@@ -181,20 +181,36 @@ async function get_tokens(tweet_url) {
     );
   }
 
-  return [bearerTokenValue, guest_token];
+  // Extract Query ID from main.js
+  // Pattern: Look for queryId before operationName:"TweetResultByRestId"
+  // Example: queryId:"tCVRZ3WCvoj0BVO7BKnL-Q",operationName:"TweetResultByRestId"
+  const query_id_match = mainjs.data.match(
+    /queryId:"([a-zA-Z0-9_-]+)"[^}]*?operationName:"TweetResultByRestId"/
+  );
+
+  if (!query_id_match || query_id_match.length < 2) {
+    throw new Error(
+      `Failed to find query ID in main.js. Tweet url: ${tweet_url}, main.js url: ${mainjs_url}`
+    );
+  }
+
+  const query_id = query_id_match[1];
+  debugLog(`Extracted Query ID: ${query_id}`);
+
+  return [bearerTokenValue, guest_token, query_id];
 }
 
-function get_details_url(tweet_id, features, variables) {
+function get_details_url(tweet_id, features, variables, query_id) {
   // create a copy of variables - we don't want to modify the original
   const variablesCopy = { ...variables };
   variablesCopy.tweetId = tweet_id;
 
-  return `https://twitter.com/i/api/graphql/0hWvDhmW8YQ-S_ib3azIrw/TweetResultByRestId?variables=${encodeURIComponent(
+  return `https://twitter.com/i/api/graphql/${query_id}/TweetResultByRestId?variables=${encodeURIComponent(
     JSON.stringify(variablesCopy)
   )}&features=${encodeURIComponent(JSON.stringify(features))}`;
 }
 
-async function get_tweet_details(tweet_url, guest_token, bearer_token) {
+async function get_tweet_details(tweet_url, guest_token, bearer_token, query_id) {
   const tweet_id = tweet_url.match(/(?<=status\/)\d+/);
 
   if (!tweet_id || tweet_id.length !== 1) {
@@ -204,7 +220,7 @@ async function get_tweet_details(tweet_url, guest_token, bearer_token) {
   }
 
   // the url needs a url encoded version of variables and features as a query string
-  const url = get_details_url(tweet_id[0], features, variables);
+  const url = get_details_url(tweet_id[0], features, variables, query_id);
 
   const details = await axios.get(url, {
     headers: {
@@ -249,7 +265,7 @@ async function get_tweet_details(tweet_url, guest_token, bearer_token) {
       }
     }
 
-    const url = get_details_url(tweet_id[0], features, variables);
+    const url = get_details_url(tweet_id[0], features, variables, query_id);
 
     const details = await axios.get(url, {
       headers: {
@@ -330,13 +346,14 @@ async function download_video(
       "https://twitter.com/",
       "https://x.com/"
     );
-    debugLog(`bearer_token: ${tweet_url}`);
-    debugLog(`guest_token: ${x_conv_tweet_url}`);
-    const [bearer_token, guest_token] = await get_tokens(x_conv_tweet_url);
+    debugLog(`tweet_url: ${tweet_url}`);
+    debugLog(`x_conv_tweet_url: ${x_conv_tweet_url}`);
+    const [bearer_token, guest_token, query_id] = await get_tokens(x_conv_tweet_url);
     debugLog(`bearer_token: ${bearer_token}`);
     debugLog(`guest_token: ${guest_token}`);
+    debugLog(`query_id: ${query_id}`);
 
-    const resp = await get_tweet_details(tweet_url, guest_token, bearer_token);
+    const resp = await get_tweet_details(tweet_url, guest_token, bearer_token, query_id);
     debugLog(`resp.data: ${JSON.stringify(resp.data, null, 2)}`);
 
     const videoUrls = createVideoUrls(resp.data);
