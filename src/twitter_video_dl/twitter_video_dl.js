@@ -220,57 +220,67 @@ async function get_tweet_details(tweet_url, guest_token, bearer_token, query_id)
   }
 
   // the url needs a url encoded version of variables and features as a query string
-  const url = get_details_url(tweet_id[0], features, variables, query_id);
+  let url = get_details_url(tweet_id[0], features, variables, query_id);
 
-  const details = await axios.get(url, {
+  let details = await axios.get(url, {
     headers: {
       authorization: `Bearer ${bearer_token}`,
       "x-guest-token": guest_token,
+    },
+    validateStatus: function (status) {
+      return status >= 200 && status < 500; // Accept 2xx, 3xx, and 4xx status codes
     },
   });
 
   let max_retries = 10;
   let cur_retry = 0;
   while (details.status === 400 && cur_retry < max_retries) {
+    // Parse error response (axios may return data as object or string)
     let error_json;
     try {
-      error_json = JSON.parse(details.data);
+      error_json = typeof details.data === 'string'
+        ? JSON.parse(details.data)
+        : details.data;
     } catch (e) {
       throw new Error(
-        `Failed to parse json from details error. details text: ${details.data} If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Status code: ${details.status}. Tweet url: ${tweet_url}`
+        `Failed to parse json from details error. details text: ${JSON.stringify(details.data)} If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Status code: ${details.status}. Tweet url: ${tweet_url}`
       );
     }
 
-    if (!("errors" in error_json)) {
+    if (!error_json || !("errors" in error_json)) {
       throw new Error(
         `Failed to find errors in details error json. If you are using the correct Twitter URL this suggests a bug in the script. Please open a GitHub issue and copy and paste this message. Status code: ${details.status}. Tweet url: ${tweet_url}`
       );
     }
 
-    const needed_variable_pattern = /Variable '([^']+)'/;
+    const needed_variable_pattern = /Variable '([^']+)'/g;
     const needed_features_pattern =
       /The following features cannot be null: ([^"]+)/;
 
     for (const error of error_json.errors) {
-      const needed_vars = error.message.match(needed_variable_pattern);
-      for (const needed_var of needed_vars) {
-        variables[needed_var] = true;
+      const needed_vars = error.message.matchAll(needed_variable_pattern);
+      for (const match of needed_vars) {
+        variables[match[1]] = true;
       }
 
-      const needed_features = error.message.match(needed_features_pattern);
-      for (const nf of needed_features) {
-        for (const feature of nf.split(",")) {
+      const needed_features_match = error.message.match(needed_features_pattern);
+      if (needed_features_match) {
+        const features_str = needed_features_match[1];
+        for (const feature of features_str.split(",")) {
           features[feature.trim()] = true;
         }
       }
     }
 
-    const url = get_details_url(tweet_id[0], features, variables, query_id);
+    url = get_details_url(tweet_id[0], features, variables, query_id);
 
-    const details = await axios.get(url, {
+    details = await axios.get(url, {
       headers: {
         authorization: `Bearer ${bearer_token}`,
         "x-guest-token": guest_token,
+      },
+      validateStatus: function (status) {
+        return status >= 200 && status < 500; // Accept 2xx, 3xx, and 4xx status codes
       },
     });
 
