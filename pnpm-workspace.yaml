@@ -1,0 +1,14 @@
+# Supply-chain hardening
+# Do not install versions published less than 7 days ago (minutes)
+minimumReleaseAge: 10080
+# Fail if a package's trust evidence (e.g. provenance) is weaker than in earlier versions
+trustPolicy: no-downgrade
+# Dependency lifecycle scripts are blocked unless listed here
+allowBuilds:
+  # jest transitive deps; prebuilt binaries are used, no install scripts needed
+  '@parcel/watcher': false
+  unrs-resolver: false
+engineStrict: true
+# Old release lines published before provenance existed (verified npm-team maintained)
+trustPolicyExclude:
+  - semver@6.3.1
