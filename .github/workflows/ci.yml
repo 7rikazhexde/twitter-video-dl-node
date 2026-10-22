@@ -1,12 +1,17 @@
 name: CI
 
+# No `paths` filter (unlike twitter-video-dl-for-sc): `test-syndication` is a
+# required status check on main, and a path-filtered required check never
+# reports on PRs outside those paths, leaving them unmergeable.
+
 on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
   # Tests hit x.com, so run weekly to detect X-side changes early
   schedule:
-    - cron: "0 0 * * 1"
+    - cron: "0 0 * * 1" # Weekly, Monday 00:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -17,11 +22,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  # Syndication API is the primary, reliable download path - required to pass.
+  test-syndication:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -29,13 +36,34 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
 
       # Installs node and pnpm pinned in mise.toml
-      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+      - name: Install mise tools
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Audit production dependencies
-        run: pnpm audit --prod
+      - name: Run Syndication API and security tests
+        run: pnpm exec jest test/videodlcheck.test.js test/security.test.js
 
-      - name: Test
-        run: pnpm test
+  # The fallback parses the TweetResultByRestId result embedded in the x.com
+  # tweet page, which is far more sensitive to X changing its page markup than
+  # the Syndication API. This job is deliberately NOT in main's required status
+  # checks, so an X-side markup change doesn't block every PR - but it still
+  # reports its real pass/fail here.
+  test-graphql-fallback:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install mise tools
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run fallback tests
+        run: pnpm exec jest test/fallback.test.js

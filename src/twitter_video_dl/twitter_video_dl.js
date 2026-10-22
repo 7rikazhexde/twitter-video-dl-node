@@ -24,6 +24,56 @@ function debugLog(...args) {
   }
 }
 
+// Default timeout (ms) for all HTTP requests, so a stalled connection to
+// X's servers can't block the process forever.
+const REQUEST_TIMEOUT = 30000;
+
+const http = axios.create({ timeout: REQUEST_TIMEOUT });
+
+const BROWSER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
+  Accept: "*/*",
+  "Accept-Language": "en-US, en;q=0.5",
+};
+
+// Hosts a tweet_url is allowed to resolve to before we ever fetch it. Without
+// this, a caller could pass any URL and have this process fetch it on their
+// behalf (SSRF).
+const ALLOWED_TWEET_HOSTS = new Set([
+  "twitter.com",
+  "www.twitter.com",
+  "mobile.twitter.com",
+  "x.com",
+  "www.x.com",
+  "mobile.x.com",
+]);
+
+// Reject anything that isn't a twitter.com/x.com link before it's fetched
+function validate_tweet_url(tweet_url) {
+  let parsed;
+  try {
+    parsed = new URL(tweet_url);
+  } catch (e) {
+    parsed = null;
+  }
+  if (
+    !parsed ||
+    !["http:", "https:"].includes(parsed.protocol) ||
+    !ALLOWED_TWEET_HOSTS.has(parsed.hostname)
+  ) {
+    throw new Error(
+      `Refusing to fetch a non-twitter.com/x.com URL: ${tweet_url}`
+    );
+  }
+}
+
+// Reduce a caller-supplied filename to a single safe path segment, so it
+// can't escape output_folder_path (path traversal) or be read as a flag.
+function sanitize_filename(name) {
+  return path.basename((name || "").trim()).replace(/^-+/, "");
+}
+
 // Open setting file
 const data = JSON.parse(
   fs.readFileSync("./src/twitter_video_dl/settings.json", "utf-8")
@@ -45,7 +95,7 @@ async function get_tokens(tweet_url) {
     TE: "trailers",
   };
 
-  const session = axios.create({ headers });
+  const session = axios.create({ headers, timeout: REQUEST_TIMEOUT });
   let response = await session.get(tweet_url);
 
   if (response.status !== 200) {
@@ -221,7 +271,7 @@ async function get_tweet_details(tweet_url, guest_token, bearer_token, query_id)
   // the url needs a url encoded version of variables and features as a query string
   const url = get_details_url(tweet_id[0], features, variables, query_id);
 
-  const details = await axios.get(url, {
+  const details = await http.get(url, {
     headers: {
       authorization: `Bearer ${bearer_token}`,
       "x-guest-token": guest_token,
@@ -266,7 +316,7 @@ async function get_tweet_details(tweet_url, guest_token, bearer_token, query_id)
 
     const url = get_details_url(tweet_id[0], features, variables, query_id);
 
-    const details = await axios.get(url, {
+    const details = await http.get(url, {
       headers: {
         authorization: `Bearer ${bearer_token}`,
         "x-guest-token": guest_token,
@@ -346,13 +396,6 @@ async function get_tweet_details_syndication(tweet_url) {
     );
   }
 
-  const headers = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
-    Accept: "*/*",
-    "Accept-Language": "en-US, en;q=0.5",
-  };
-
   // Try multiple API endpoints
   const api_urls = [
     `https://cdn.syndication.twimg.com/tweet-result?id=${tweet_id[0]}&lang=en&token=0`,
@@ -362,7 +405,7 @@ async function get_tweet_details_syndication(tweet_url) {
   for (const api_url of api_urls) {
     debugLog(`Trying API: ${api_url}`);
     try {
-      const response = await axios.get(api_url, { headers });
+      const response = await http.get(api_url, { headers: BROWSER_HEADERS });
       if (
         response.status === 200 &&
         response.data &&
@@ -381,36 +424,181 @@ async function get_tweet_details_syndication(tweet_url) {
   );
 }
 
-// Extract the highest bitrate mp4 URL of each video/gif in the Syndication API response
-function createVideoUrlsFromSyndication(syndicationData) {
-  const videoUrlList = [];
+// Pick the highest bitrate mp4 URL from a media item's video_info.variants
+function pick_best_mp4_url(media) {
+  const variants = (media.video_info && media.video_info.variants) || [];
+  let videoUrl = null;
+  let maxBitrate = 0;
 
-  for (const media of syndicationData.mediaDetails || []) {
-    if (media.type !== "video" && media.type !== "animated_gif") continue;
-
-    const variants = (media.video_info && media.video_info.variants) || [];
-    let videoUrl = null;
-    let maxBitrate = 0;
-
-    for (const variant of variants) {
-      if (variant.content_type !== "video/mp4") continue;
-      const bitrate = variant.bitrate || 0;
-      if (bitrate > maxBitrate) {
-        maxBitrate = bitrate;
-        videoUrl = variant.url;
-      }
-      // gif case
-      else if (bitrate === 0 && videoUrl === null) {
-        videoUrl = variant.url;
-      }
+  for (const variant of variants) {
+    if (variant.content_type !== "video/mp4") continue;
+    const bitrate = variant.bitrate || 0;
+    if (bitrate > maxBitrate) {
+      maxBitrate = bitrate;
+      videoUrl = variant.url;
     }
-
-    if (videoUrl) {
-      videoUrlList.push(videoUrl);
+    // gif case
+    else if (bitrate === 0 && videoUrl === null) {
+      videoUrl = variant.url;
     }
   }
 
-  return videoUrlList;
+  return videoUrl;
+}
+
+// Collect video URLs from a list of media items.
+// Returns: { videoUrls, gifFlag }
+function extract_videos_from_media_list(mediaList) {
+  const videoUrls = [];
+  let gifFlag = false;
+
+  for (const media of mediaList) {
+    if (media.type !== "video" && media.type !== "animated_gif") continue;
+    if (media.type === "animated_gif") gifFlag = true;
+
+    const videoUrl = pick_best_mp4_url(media);
+    if (videoUrl) {
+      videoUrls.push(videoUrl);
+    }
+  }
+
+  return { videoUrls, gifFlag };
+}
+
+// Card-type tweets (promoted/ad tweets) carry their media inside a
+// JSON-encoded unified_card instead of the regular media list.
+function extract_videos_from_unified_card(unifiedCardStr) {
+  if (!unifiedCardStr) return { videoUrls: [], gifFlag: false };
+
+  let unifiedCard;
+  try {
+    unifiedCard = JSON.parse(unifiedCardStr);
+  } catch (e) {
+    debugLog(`Failed to parse unified_card JSON: ${e.message}`);
+    return { videoUrls: [], gifFlag: false };
+  }
+
+  return extract_videos_from_media_list(
+    Object.values(unifiedCard.media_entities || {})
+  );
+}
+
+// Extract video URLs from the Syndication API response.
+// Returns: { videoUrls, gifFlag }
+function extract_media_from_syndication(syndicationData) {
+  let result = extract_videos_from_media_list(
+    syndicationData.mediaDetails || []
+  );
+
+  // Extract videos from card (for promoted/ad tweets)
+  if (result.videoUrls.length === 0) {
+    const bindingValues =
+      (syndicationData.card && syndicationData.card.binding_values) || {};
+    const unifiedCard = bindingValues.unified_card;
+    result = extract_videos_from_unified_card(
+      unifiedCard && unifiedCard.string_value
+    );
+  }
+
+  debugLog(`Extracted ${result.videoUrls.length} videos`);
+  return result;
+}
+
+// X server-renders the tweet page with the GraphQL TweetResultByRestId
+// response already embedded as a Relay record, so no bearer/guest token or
+// extra API call is needed (unlike get_tokens()/get_tweet_details(), which
+// scrape a main.js URL X no longer serves).
+const RELAY_RESULT_PATTERN =
+  /result:\$R\[\d+\]=\{kind:"Result\.Ok",value:"/;
+
+// Fetch the tweet page and pull out the embedded TweetResultByRestId result
+async function get_tweet_result_from_page(tweet_url) {
+  validate_tweet_url(tweet_url);
+
+  const response = await http.get(tweet_url, {
+    headers: BROWSER_HEADERS,
+    responseType: "text",
+  });
+
+  if (response.status !== 200) {
+    throw new Error(
+      `Failed to get tweet page. Status code: ${response.status}. Tweet url: ${tweet_url}`
+    );
+  }
+
+  const text = response.data;
+  const nameIdx = text.indexOf('name:"TweetResultByRestId"');
+  if (nameIdx === -1) {
+    throw new Error(
+      `Could not find an embedded TweetResultByRestId result on the tweet page. Tweet url: ${tweet_url}`
+    );
+  }
+
+  // The result typically appears shortly after the request name in the
+  // page's inlined Relay store script; search a bounded window after it.
+  const searchWindow = text.slice(nameIdx, nameIdx + 4000);
+  const match = searchWindow.match(RELAY_RESULT_PATTERN);
+  if (!match) {
+    throw new Error(
+      `Could not find a Result.Ok value for TweetResultByRestId. Tweet url: ${tweet_url}`
+    );
+  }
+
+  // The value is a JS double-quoted string literal (JSON-escaped); walk it
+  // by hand to find its unescaped closing quote, then decode it twice -
+  // once to unescape the string literal, once to parse the JSON it holds.
+  let i = nameIdx + match.index + match[0].length;
+  const start = i;
+  while (i < text.length && text[i] !== '"') {
+    i += text[i] === "\\" ? 2 : 1;
+  }
+
+  let tweetResult;
+  try {
+    tweetResult = JSON.parse(JSON.parse(`"${text.slice(start, i)}"`));
+  } catch (e) {
+    throw new Error(
+      `Failed to parse the embedded TweetResultByRestId JSON. Tweet url: ${tweet_url}. Error: ${e.message}`
+    );
+  }
+
+  let result =
+    (tweetResult.data &&
+      tweetResult.data.tweet_result_by_rest_id &&
+      tweetResult.data.tweet_result_by_rest_id.result) ||
+    {};
+  // Some tweets (e.g. age-restricted) wrap the real Tweet one level deeper.
+  if (result.__typename !== "Tweet" && result.tweet) {
+    result = result.tweet;
+  }
+
+  if (result.__typename !== "Tweet") {
+    throw new Error(
+      `Embedded TweetResultByRestId result wasn't a Tweet (got ${result.__typename}). Tweet url: ${tweet_url}`
+    );
+  }
+
+  return result;
+}
+
+// Extract video URLs from a parsed TweetResultByRestId result.
+// Returns: { videoUrls, gifFlag } - same shape as extract_media_from_syndication()
+function extract_media_from_tweet_result(result) {
+  let media = extract_videos_from_media_list(result.media_entities2 || []);
+
+  // Card-type tweets carry their media inside card.legacy.binding_values
+  if (media.videoUrls.length === 0) {
+    const bindingValues =
+      (result.card && result.card.legacy && result.card.legacy.binding_values) ||
+      [];
+    const unifiedCard = bindingValues.find((b) => b.key === "unified_card");
+    media = extract_videos_from_unified_card(
+      unifiedCard && unifiedCard.value && unifiedCard.value.string_value
+    );
+  }
+
+  debugLog(`Extracted ${media.videoUrls.length} videos from tweet result`);
+  return media;
 }
 
 async function download_video(
@@ -423,34 +611,29 @@ async function download_video(
       "https://twitter.com/",
       "https://x.com/"
     );
+    validate_tweet_url(x_conv_tweet_url);
+    output_file = sanitize_filename(output_file);
+
     let videoUrls;
-    // Use Syndication API first, then fall back to GraphQL API
+    // Use Syndication API first, then fall back to the embedded tweet page data
     try {
       const syndicationData = await get_tweet_details_syndication(
         x_conv_tweet_url
       );
-      videoUrls = createVideoUrlsFromSyndication(syndicationData);
+      ({ videoUrls } = extract_media_from_syndication(syndicationData));
     } catch (error) {
       debugLog(
-        `Syndication API failed: ${error.message}. Falling back to GraphQL API.`
+        `Syndication API failed: ${error.message}. Falling back to embedded tweet page data.`
       );
-      const [bearer_token, guest_token, query_id] = await get_tokens(
-        x_conv_tweet_url
-      );
-      debugLog(`bearer_token: ${bearer_token}`);
-      debugLog(`guest_token: ${guest_token}`);
-
-      const resp = await get_tweet_details(
-        tweet_url,
-        guest_token,
-        bearer_token,
-        query_id
-      );
-      debugLog(`resp.data: ${JSON.stringify(resp.data, null, 2)}`);
-
-      videoUrls = createVideoUrls(resp.data);
+      const tweetResult = await get_tweet_result_from_page(x_conv_tweet_url);
+      ({ videoUrls } = extract_media_from_tweet_result(tweetResult));
     }
     debugLog("videourls:", videoUrls);
+
+    if (videoUrls.length === 0) {
+      console.log(`No videos found in tweet: ${tweet_url}`);
+      return;
+    }
 
     // Output folder path
     const outputFolderPath = path.resolve(
@@ -495,7 +678,7 @@ async function download_video(
 
       // HTTP request (GET)
       debugLog("videoUrl:", videoUrl);
-      const response = await axios({
+      const response = await http({
         url: videoUrl,
         method: "GET",
         responseType: "stream",
@@ -523,4 +706,12 @@ async function download_video(
   }
 }
 
-module.exports = { download_video };
+module.exports = {
+  download_video,
+  validate_tweet_url,
+  sanitize_filename,
+  get_tweet_details_syndication,
+  extract_media_from_syndication,
+  get_tweet_result_from_page,
+  extract_media_from_tweet_result,
+};
