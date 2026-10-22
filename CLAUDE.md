@@ -19,7 +19,7 @@ pnpm exec jest -t "Test 3"                           # single test case by name
 
 `pnpm-workspace.yaml` holds supply-chain settings: `minimumReleaseAge` (7 days), `trustPolicy: no-downgrade` (with `trustPolicyExclude` for verified exceptions), and `allowBuilds` (dependency install scripts are denied). If an install fails on one of these, investigate the package before adding an exception.
 
-CI (`.github/workflows/ci.yml`) runs the same steps via `jdx/mise-action` on push/PR and weekly. Actions are pinned by commit SHA; Dependabot (`.github/dependabot.yml`, 7-day cooldown) updates both npm deps and the action SHAs.
+CI (`.github/workflows/ci.yml`) runs the same steps via `jdx/mise-action` on push/PR and weekly. Actions are pinned by commit SHA; Dependabot (`.github/dependabot.yml`, 7-day cooldown) updates both npm deps and the action SHAs. `main` is protected by a ruleset: changes (including version bumps) must go through a PR with the `test` and `dependency-review` checks passing; force pushes and deletion are blocked.
 
 Tests are live integration tests: they hit x.com over the network and verify output with `ffprobe` (via `fluent-ffmpeg`), so `ffmpeg`/`ffprobe` must be installed on PATH. Each test has a 10s timeout.
 
