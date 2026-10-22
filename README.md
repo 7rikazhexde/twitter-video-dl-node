@@ -6,13 +6,29 @@ This project is based on the original code of the [7rikazhexde / twitter-video-d
 
 - [twitter-video-dl-node](#twitter-video-dl-node)
   - [ToC](#toc)
+  - [Requirements](#requirements)
   - [Usage](#usage)
   - [Auto Retry Feature](#auto-retry-feature)
   - [Test-Environment](#test-environment)
 
+## Requirements
+
+Node.js and pnpm versions are pinned in `mise.toml` and managed with [mise](https://mise.jdx.dev/).
+
+> [!IMPORTANT]
+> Node.js **22.23.4 / 24.22.1 / 26.12.1 or later** is required.
+> Earlier versions still trust the compromised eMudhra emSign CA intermediates ([advisory](https://emudhra.we-have-a-problem.com/)).
+
+```bash
+mise install
+pnpm install
+```
+
+`pnpm-workspace.yaml` enables supply-chain protections: versions published less than 7 days ago are not installed, trust downgrades (e.g. lost provenance) fail the install, and dependency install scripts are blocked.
+
 ## Usage
 
-1. Run the `npm install` command
+1. Run `mise install` and `pnpm install` (see [Requirements](#requirements))
 2. See a video on X(Twitter) App that you want to save.
 3. Invoke the script, e.g.:
 
@@ -40,5 +56,6 @@ From time to time, every week or so, Twitter will add some new request parameter
 If you get an error with the specified URL, please register an issue. If you want to test individually, you can test in advance by adding the URL of the post where the video was posted to `tests/TestInfoFile.jsonc`.
 
 > [!NOTE]
-> **- The test environment depends on **jest**, which is added as part of the dev environment dependency(devDependencies) files with the `npm install` command.**  
-> **- You can run the test command in `npm test`.**
+> **- The test environment depends on **jest**, which is added as part of the dev environment dependency(devDependencies) files with the `pnpm install` command.**  
+> **- You can run the test command in `pnpm test`.**  
+> **- Tests verify the downloaded files with `ffprobe`, so ffmpeg must be installed.**
