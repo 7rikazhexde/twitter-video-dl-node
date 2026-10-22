@@ -21,7 +21,7 @@ pnpm exec jest -t "Test 3"                           # single test case by name
 
 Workflows mirror twitter-video-dl-for-sc's (keep them in sync). `ci.yml` has two jobs: `test-syndication` (`videodlcheck` + `security` tests, required) and `test-graphql-fallback` (`fallback` tests, advisory, not required). `pnpm-audit.yml` runs `pnpm audit --prod` on PR/push and weekly; `dependency-review.yml` checks dependency diffs on PRs. No `paths` filters, since required checks must report on every PR. Actions are pinned by commit SHA; Dependabot (`.github/dependabot.yml`, one grouped PR per ecosystem, 7-day cooldown to match `minimumReleaseAge`) updates npm deps and action SHAs. `main` is protected by a ruleset: changes (including version bumps) must go through a PR with `test-syndication`, `dependency-review`, and `pnpm-audit` passing; force pushes and deletion are blocked.
 
-Tests are live integration tests: they hit x.com over the network and verify output with `ffprobe` (via `fluent-ffmpeg`), so `ffmpeg`/`ffprobe` must be installed on PATH. Each test has a 10s timeout.
+Tests are live integration tests: they hit x.com over the network. Downloaded MP4s are verified in JS (top-level boxes must fit the file, so truncated downloads fail; `mp4box` must find a video track), so ffmpeg is not needed. This intentionally differs from twitter-video-dl-for-sc, which needs ffmpeg anyway for GIF conversion; don't reintroduce ffprobe when syncing. Download tests have a 10s timeout.
 
 ## Architecture
 

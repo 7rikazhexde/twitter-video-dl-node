@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { pipeline } = require("stream/promises");
 const axios = require("axios");
 
 const script_dir = __dirname;
@@ -685,19 +686,9 @@ async function download_video(
       });
 
       // Download and Save
-      response.data.pipe(fs.createWriteStream(fullOutputPath));
-
-      await new Promise((resolve, reject) => {
-        response.data.on("end", () => {
-          console.log(`Video ${i + 1} downloaded successfully.`);
-          resolve();
-        });
-
-        response.data.on("error", (error) => {
-          console.error("Error:", error);
-          reject(error);
-        });
-      });
+      // pipeline resolves only after the file is fully written and closed
+      await pipeline(response.data, fs.createWriteStream(fullOutputPath));
+      console.log(`Video ${i + 1} downloaded successfully.`);
     }
 
     console.log("All videos downloaded successfully.");
