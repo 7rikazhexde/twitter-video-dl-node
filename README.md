@@ -58,4 +58,4 @@ If you get an error with the specified URL, please register an issue. If you wan
 > [!NOTE]
 > **- The test environment depends on **jest**, which is added as part of the dev environment dependency(devDependencies) files with the `pnpm install` command.**  
 > **- You can run the test command in `pnpm test`.**  
-> **- Tests verify the downloaded files with `ffprobe`, so ffmpeg must be installed.**
+> **- Tests verify the downloaded files with [mp4box.js](https://github.com/gpac/mp4box.js), so ffmpeg is not required.**
