@@ -160,6 +160,21 @@ async function get_tokens(tweet_url) {
     bearerTokenValue = bearerTokenValue.replace("Bearer ", "");
   }
 
+  // Extract Query ID from main.js
+  // Example: queryId:"tCVRZ3WCvoj0BVO7BKnL-Q",operationName:"TweetResultByRestId"
+  const query_id_match = mainjs.data.match(
+    /queryId:"([a-zA-Z0-9_-]+)"[^}]*?operationName:"TweetResultByRestId"/
+  );
+
+  if (!query_id_match) {
+    throw new Error(
+      `Failed to find query ID in main.js. Tweet url: ${tweet_url}, main.js url: ${mainjs_url}`
+    );
+  }
+
+  const query_id = query_id_match[1];
+  debugLog(`query_id: ${query_id}`);
+
   session.defaults.headers.common[
     "authorization"
   ] = `Bearer ${bearerTokenValue}`;
@@ -181,20 +196,20 @@ async function get_tokens(tweet_url) {
     );
   }
 
-  return [bearerTokenValue, guest_token];
+  return [bearerTokenValue, guest_token, query_id];
 }
 
-function get_details_url(tweet_id, features, variables) {
+function get_details_url(tweet_id, features, variables, query_id) {
   // create a copy of variables - we don't want to modify the original
   const variablesCopy = { ...variables };
   variablesCopy.tweetId = tweet_id;
 
-  return `https://twitter.com/i/api/graphql/0hWvDhmW8YQ-S_ib3azIrw/TweetResultByRestId?variables=${encodeURIComponent(
+  return `https://twitter.com/i/api/graphql/${query_id}/TweetResultByRestId?variables=${encodeURIComponent(
     JSON.stringify(variablesCopy)
   )}&features=${encodeURIComponent(JSON.stringify(features))}`;
 }
 
-async function get_tweet_details(tweet_url, guest_token, bearer_token) {
+async function get_tweet_details(tweet_url, guest_token, bearer_token, query_id) {
   const tweet_id = tweet_url.match(/(?<=status\/)\d+/);
 
   if (!tweet_id || tweet_id.length !== 1) {
@@ -204,7 +219,7 @@ async function get_tweet_details(tweet_url, guest_token, bearer_token) {
   }
 
   // the url needs a url encoded version of variables and features as a query string
-  const url = get_details_url(tweet_id[0], features, variables);
+  const url = get_details_url(tweet_id[0], features, variables, query_id);
 
   const details = await axios.get(url, {
     headers: {
@@ -249,7 +264,7 @@ async function get_tweet_details(tweet_url, guest_token, bearer_token) {
       }
     }
 
-    const url = get_details_url(tweet_id[0], features, variables);
+    const url = get_details_url(tweet_id[0], features, variables, query_id);
 
     const details = await axios.get(url, {
       headers: {
@@ -320,6 +335,84 @@ function createVideoUrls(jsonData) {
   return videoUrlList;
 }
 
+// Use Twitter's Syndication API to get tweet details.
+// This API doesn't require authentication and is more stable than GraphQL.
+async function get_tweet_details_syndication(tweet_url) {
+  const tweet_id = tweet_url.match(/(?<=status\/)\d+/);
+
+  if (!tweet_id || tweet_id.length !== 1) {
+    throw new Error(
+      `Could not parse tweet id from your url. Tweet url: ${tweet_url}`
+    );
+  }
+
+  const headers = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:84.0) Gecko/20100101 Firefox/84.0",
+    Accept: "*/*",
+    "Accept-Language": "en-US, en;q=0.5",
+  };
+
+  // Try multiple API endpoints
+  const api_urls = [
+    `https://cdn.syndication.twimg.com/tweet-result?id=${tweet_id[0]}&lang=en&token=0`,
+    `https://cdn.syndication.twimg.com/tweet-result?id=${tweet_id[0]}`,
+  ];
+
+  for (const api_url of api_urls) {
+    debugLog(`Trying API: ${api_url}`);
+    try {
+      const response = await axios.get(api_url, { headers });
+      if (
+        response.status === 200 &&
+        response.data &&
+        typeof response.data === "object" &&
+        Object.keys(response.data).length > 0
+      ) {
+        return response.data;
+      }
+    } catch (error) {
+      debugLog(`Syndication API failed: ${api_url}`, error.message);
+    }
+  }
+
+  throw new Error(
+    `Failed to get tweet details from any Syndication API endpoint. Tweet url: ${tweet_url}`
+  );
+}
+
+// Extract the highest bitrate mp4 URL of each video/gif in the Syndication API response
+function createVideoUrlsFromSyndication(syndicationData) {
+  const videoUrlList = [];
+
+  for (const media of syndicationData.mediaDetails || []) {
+    if (media.type !== "video" && media.type !== "animated_gif") continue;
+
+    const variants = (media.video_info && media.video_info.variants) || [];
+    let videoUrl = null;
+    let maxBitrate = 0;
+
+    for (const variant of variants) {
+      if (variant.content_type !== "video/mp4") continue;
+      const bitrate = variant.bitrate || 0;
+      if (bitrate > maxBitrate) {
+        maxBitrate = bitrate;
+        videoUrl = variant.url;
+      }
+      // gif case
+      else if (bitrate === 0 && videoUrl === null) {
+        videoUrl = variant.url;
+      }
+    }
+
+    if (videoUrl) {
+      videoUrlList.push(videoUrl);
+    }
+  }
+
+  return videoUrlList;
+}
+
 async function download_video(
   tweet_url,
   output_file = undefined,
@@ -330,16 +423,33 @@ async function download_video(
       "https://twitter.com/",
       "https://x.com/"
     );
-    debugLog(`bearer_token: ${tweet_url}`);
-    debugLog(`guest_token: ${x_conv_tweet_url}`);
-    const [bearer_token, guest_token] = await get_tokens(x_conv_tweet_url);
-    debugLog(`bearer_token: ${bearer_token}`);
-    debugLog(`guest_token: ${guest_token}`);
+    let videoUrls;
+    // Use Syndication API first, then fall back to GraphQL API
+    try {
+      const syndicationData = await get_tweet_details_syndication(
+        x_conv_tweet_url
+      );
+      videoUrls = createVideoUrlsFromSyndication(syndicationData);
+    } catch (error) {
+      debugLog(
+        `Syndication API failed: ${error.message}. Falling back to GraphQL API.`
+      );
+      const [bearer_token, guest_token, query_id] = await get_tokens(
+        x_conv_tweet_url
+      );
+      debugLog(`bearer_token: ${bearer_token}`);
+      debugLog(`guest_token: ${guest_token}`);
 
-    const resp = await get_tweet_details(tweet_url, guest_token, bearer_token);
-    debugLog(`resp.data: ${JSON.stringify(resp.data, null, 2)}`);
+      const resp = await get_tweet_details(
+        tweet_url,
+        guest_token,
+        bearer_token,
+        query_id
+      );
+      debugLog(`resp.data: ${JSON.stringify(resp.data, null, 2)}`);
 
-    const videoUrls = createVideoUrls(resp.data);
+      videoUrls = createVideoUrls(resp.data);
+    }
     debugLog("videourls:", videoUrls);
 
     // Output folder path
