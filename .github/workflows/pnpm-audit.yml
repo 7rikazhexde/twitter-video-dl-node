@@ -1,0 +1,35 @@
+name: Dependency Vulnerability Scan
+
+# Scans resolved production dependencies (incl. transitive) against the npm
+# advisory database with pnpm audit. Runs on every PR/push AND on a weekly
+# schedule, since a new CVE (like the eMudhra emSign CA incident) can land
+# against an already-pinned version with no code change at all.
+# Dev dependencies are excluded: jest pulls in sprintf-js, which has a
+# moderate advisory with no fixed version yet.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 0 * * 1" # Weekly, Monday 00:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pnpm-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install mise tools
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+
+      - name: Run pnpm audit
+        run: pnpm audit --prod

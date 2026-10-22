@@ -1,34 +1,46 @@
 version: 2
-updates:
-  # package.json / pnpm-lock.yaml
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    # Match minimumReleaseAge in pnpm-workspace.yaml
-    cooldown:
-      default-days: 7
-    groups:
-      dev-dependencies:
-        dependency-type: development
-        update-types: [minor, patch]
-      production-dependencies:
-        dependency-type: production
-        update-types: [minor, patch]
-    commit-message:
-      prefix: "⬆️"
 
-  # SHA-pinned actions in .github/workflows
-  - package-ecosystem: github-actions
-    directory: /
+# Update policy
+# - Dependency bumps are batched weekly into one grouped PR per ecosystem
+#   (instead of one PR per package) to keep review manageable for a
+#   single-maintainer project.
+# - `cooldown` delays every bump until the release has been public for a while,
+#   so a freshly-published (or compromised) version is not pulled the instant
+#   it ships. npm uses 7 days for every update type (unlike the shorter
+#   per-semver values in twitter-video-dl-for-sc) because pnpm's
+#   `minimumReleaseAge` in pnpm-workspace.yaml would reject anything younger.
+# - `dependency-review.yml` still fails any PR that introduces a known
+#   vulnerable dependency, and `pnpm-audit.yml` scans weekly independent of
+#   Dependabot. Merging a Dependabot PR stays manual.
+updates:
+  # npm dependencies (managed by pnpm; covers package.json + pnpm-lock.yaml)
+  - package-ecosystem: "npm"
+    directory: "/"
     schedule:
-      interval: weekly
-      day: monday
+      interval: "weekly"
     cooldown:
       default-days: 7
     groups:
-      github-actions:
-        patterns: ["*"]
+      dependencies:
+        patterns:
+          - "*"
     commit-message:
       prefix: "⬆️"
+    open-pull-requests-limit: 10
+
+  # GitHub Actions used in .github/workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # NOTE: the github-actions ecosystem does not support the semver-*-days
+    # keys (Dependabot rejects them here) - only the flat default applies.
+    cooldown:
+      default-days: 7
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "⬆️"
+    open-pull-requests-limit: 10
