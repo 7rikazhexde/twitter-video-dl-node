@@ -9,7 +9,7 @@
   "author": "7rikazhexde",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.20.0",
+    "axios": "^1.21.0",
     "fs": "^0.0.1-security",
     "jsonc-parser": "^3.3.1",
     "path": "^0.12.7",
@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "jest": "^30.5.2",
-    "mp4box": "^2.4.1"
+    "mp4box": "^2.5.0"
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1 || >=26.12.1"
