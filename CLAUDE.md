@@ -45,4 +45,4 @@ Tests are live integration tests: they hit x.com over the network. Downloaded MP
 
 ## Tests
 
-`test/videodlcheck.test.js` generates one jest test per entry in `test/TestInfoFile.jsonc` (parsed with `jsonc-parser`) and downloads via `download_video`. `test/fallback.test.js` resolves the same cases through the embedded-page fallback and checks the video count; `test/security.test.js` covers URL/filename validation (offline). To add a case, append an object with `url`, `file_name`, `output_directory` (relative to `test/`), and `expected_files`.
+`test/videodlcheck.test.js` generates one jest test per entry in `test/TestInfoFile.jsonc` (parsed with `jsonc-parser`) and downloads via `download_video`. `test/fallback.test.js` resolves the same cases through the embedded-page fallback and checks the video count (with `jest.retryTimes(2)`, since x.com occasionally serves a page with no media for a moment); `test/security.test.js` covers URL/filename validation (offline). To add a case, append an object with `url`, `file_name`, `output_directory` (relative to `test/`), and `expected_files`.
