@@ -11,6 +11,11 @@ const tvdl = require("../src/twitter_video_dl/twitter_video_dl");
 
 const testData = parse(fs.readFileSync("./test/TestInfoFile.jsonc", "utf8"));
 
+// x.com occasionally serves a page whose embedded result has no media for a
+// moment (seen on CI, not reproducible locally), so retry these live tests
+// instead of failing on a one-off. Scoped to this file only.
+jest.retryTimes(2, { logErrorsBeforeRetry: true });
+
 describe("Embedded tweet page fallback tests", () => {
   test("get_tweet_result_from_page returns a Tweet with media", async () => {
     const result = await tvdl.get_tweet_result_from_page(
