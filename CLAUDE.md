@@ -17,7 +17,7 @@ pnpm test                                            # jest; all tests
 pnpm exec jest -t "Test 3"                           # single test case by name
 ```
 
-`pnpm-workspace.yaml` holds supply-chain settings: `minimumReleaseAge` (7 days), `trustPolicy: no-downgrade` (with `trustPolicyExclude` for verified exceptions), and `allowBuilds` (dependency install scripts are denied). If an install fails on one of these, investigate the package before adding an exception.
+`pnpm-workspace.yaml` holds supply-chain settings: `minimumReleaseAge` (7 days), `trustPolicy: no-downgrade` (with `trustPolicyExclude` for verified exceptions), and `allowBuilds` (dependency install scripts are denied). If an install fails on one of these, investigate the package before adding an exception. It also holds security `overrides` that force patched majors of jest's transitive `minimatch`/`glob`; remove each once jest depends on the fixed version itself.
 
 Workflows mirror twitter-video-dl-for-sc's (keep them in sync). `ci.yml` has two jobs: `test-syndication` (`videodlcheck` + `security` tests, required) and `test-graphql-fallback` (`fallback` tests, advisory, not required). `pnpm-audit.yml` runs `pnpm audit --prod` on PR/push and weekly; `dependency-review.yml` checks dependency diffs on PRs. No `paths` filters, since required checks must report on every PR. Actions are pinned by commit SHA; Dependabot (`.github/dependabot.yml`, one grouped PR per ecosystem, 7-day cooldown to match `minimumReleaseAge`) updates npm deps and action SHAs. `main` is protected by a ruleset: changes (including version bumps) must go through a PR with `test-syndication`, `dependency-review`, and `pnpm-audit` passing; force pushes and deletion are blocked.
 
