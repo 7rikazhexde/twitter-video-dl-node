@@ -12,3 +12,11 @@ engineStrict: true
 # Old release lines published before provenance existed (verified npm-team maintained)
 trustPolicyExclude:
   - semver@6.3.1
+# Security overrides for transitive deps whose parents don't allow the fix yet
+overrides:
+  # GHSA-g3hv-75wg-m249 (ReDoS-like globparts amplification), fixed in 11.0.1.
+  # jest's glob@10/@13 pin minimatch ^9/^10; drop once jest ships glob@14.
+  "minimatch@<11.0.1": "^11.0.4"
+  # GHSA-3g3m-2fjr-6pw4 (AbortSignal bypass), fixed in 14.0.2.
+  # jest pins glob ^10/^13; drop once jest moves to glob@14.
+  "glob@>=9.0.0 <14.0.2": "^14.0.3"
